@@ -1,0 +1,8 @@
+.idea
+.m2
+.mvn
+target
+data
+logs
+*.iml
+docker-compose*.yml

@@ -1,0 +1,73 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: researchflow
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:mysql://localhost:3306/researchflow?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+storage:
+  local:
+    root: ${DOCUMENT_STORAGE_ROOT:data/documents}
+    max-file-size: 52428800
+
+ai:
+  service:
+    base-url: ${AI_SERVICE_BASE_URL:http://127.0.0.1:8090}
+    internal-token: ${AI_INTERNAL_TOKEN:researchflow-local-ai-token}
+
+notification:
+  reminder-initial-delay-ms: ${NOTIFICATION_REMINDER_INITIAL_DELAY_MS:20000}
+  reminder-fixed-delay-ms: ${NOTIFICATION_REMINDER_FIXED_DELAY_MS:3600000}
+
+report:
+  export:
+    font-path: ${REPORT_EXPORT_FONT_PATH:}
+
+jwt:
+  secret-key: ${JWT_SECRET_KEY:researchflow-local-jwt-secret-key-change-me}
+  ttl: ${JWT_TTL:7200000}
+
+springdoc:
+  packages-to-scan: com.researchflow.controller
+  paths-to-match: /api/**
+  swagger-ui:
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+
+logging:
+  file:
+    name: ${LOG_FILE:logs/researchflow.log}
+  level:
+    root: INFO
+    com.researchflow: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{requestId:-no-request}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{requestId:-no-request}] %logger{36} - %msg%n"
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30

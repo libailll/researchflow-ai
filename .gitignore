@@ -1,0 +1,55 @@
+# Environment variables and secrets
+.env
+**/.env
+!.env.example
+*.local
+*.key
+*.pem
+
+# IDE metadata
+.idea/
+.vscode/
+*.iml
+
+# Java / Maven
+**/target/
+researchflow/.m2/
+logs/
+*.log
+
+# Node / Vue
+**/node_modules/
+frontend/dist/
+frontend/.npm-cache/
+frontend/src/**/*.js
+frontend/.openai/
+frontend/public/file.svg
+frontend/public/globe.svg
+frontend/public/window.svg
+
+# Python, local models and caches
+ai-service/.venv/
+ai-service/data/
+**/__pycache__/
+*.py[cod]
+
+# Runtime data
+docker-data/
+data/
+uploads/
+
+# Temporary and generated QA files
+tmp/
+docs/_qa*/
+docs/
+tools/
+ResearchFlow AI 项目开发总需求.md
+ResearchFlow_AI_开发进度与下一步计划.md
+researchflow/docker-compose.rabbitmq.yml
+*.tmp
+
+# Personal resume assets
+resume/
+
+# Preserved histories of the former nested repositories
+**/.git-old/

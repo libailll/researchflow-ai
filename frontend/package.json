@@ -1,0 +1,30 @@
+{
+  "name": "researchflow-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.11.0",
+    "element-plus": "^2.11.0",
+    "pinia": "^3.0.3",
+    "vue": "^3.5.18",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@openai/sites-vite-plugin": "0.1.0",
+    "@types/node": "^22.18.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.0.0",
+    "vitest": "^4.0.0",
+    "vue-tsc": "^3.0.6"
+  }
+}

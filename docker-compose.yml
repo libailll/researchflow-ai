@@ -1,0 +1,180 @@
+name: researchflow-ai
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-researchflow-mysql-change-me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-researchflow}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./researchflow/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-researchflow-redis-change-me}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-researchflow-redis-change-me}"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-researchflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-researchflow-rabbit-change-me}
+      TZ: Asia/Shanghai
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./researchflow
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8080
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-researchflow}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-researchflow-mysql-change-me}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-researchflow-redis-change-me}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-researchflow}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-researchflow-rabbit-change-me}
+      AI_SERVICE_BASE_URL: http://ai-service:8090
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-researchflow-ai-token-change-me}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-researchflow-jwt-secret-key-change-me-now}
+      JWT_TTL: ${JWT_TTL:-7200000}
+      DOCUMENT_STORAGE_ROOT: /data/documents
+      REPORT_EXPORT_FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc,0
+      LOG_FILE: /app/logs/researchflow.log
+      TZ: Asia/Shanghai
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - document-data:/data/documents
+      - backend-logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: ./ai-service/.env
+        required: false
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8090
+      JAVA_API_BASE_URL: http://backend:8080
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-researchflow-ai-token-change-me}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-researchflow}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-researchflow-rabbit-change-me}
+      RABBITMQ_VHOST: /
+      QDRANT_URL: http://qdrant:6333
+      EMBEDDING_CACHE_DIR: /data/models
+      TZ: Asia/Shanghai
+    ports:
+      - "${AI_SERVICE_PORT:-8090}:8090"
+    volumes:
+      - document-data:/data/documents
+      - embedding-model-data:/data/models
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8090/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  redis-data:
+  rabbitmq-data:
+  qdrant-data:
+  document-data:
+  embedding-model-data:
+  backend-logs:
