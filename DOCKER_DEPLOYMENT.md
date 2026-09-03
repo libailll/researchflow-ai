@@ -50,6 +50,8 @@ docker compose up -d --build backend ai-service frontend
 
 ## 数据初始化与现有数据
 
-MySQL 数据卷第一次创建时，会按 `researchflow/sql` 中的全部 SQL 文件初始化完整表结构。初始化脚本只会在全新数据卷上执行；已有数据卷不会被覆盖。
+数据库结构由 Java 后端启动时通过 Flyway 自动维护，迁移脚本位于 `researchflow/src/main/resources/db/migration`。全新数据卷会执行全部迁移；已有数据库会建立版本基线并执行缺失迁移，因此新增表或字段后无需删除数据卷，也不需要手工运行 SQL。
+
+已经执行过的迁移文件不能再修改。后续结构变更必须新增更高版本的 `V<n>__description.sql`，并正常重启后端。
 
 Java 与 AI Service 将 `document-data` 同时挂载到 `/data/documents`，因此 Java 上传后的文件可以被 Python 文档解析 Worker 直接读取。所有数据库、中间件、文档和模型均使用命名卷持久化，普通的 `docker compose down` 不会删除数据。

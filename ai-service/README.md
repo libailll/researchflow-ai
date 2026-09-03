@@ -51,7 +51,11 @@ AGENT_MAX_STEPS=6
 
 `RAG_TOP_K` 控制候选片段数量，`RAG_MIN_SCORE` 控制最低相关度，`RAG_MAX_CONTEXT_CHARS` 限制送入模型的证据总长度。流式对话会先发送 `sources` 事件，再发送回答内容事件。
 
-`AGENT_MAX_STEPS` 限制单次请求的最大工具调用轮数。当前 Agent 只开放读取类工具，不允许直接创建、修改或删除任务。
+`AGENT_MAX_STEPS` 限制单次请求的最大工具调用轮数。Agent 的读取类工具可直接执行；创建或修改任务会先生成操作提案，只有用户在前端确认且 Java 服务再次完成权限校验后才会写入。
+
+## 消息失败恢复
+
+文档解析、向量化和向量删除消息默认最多重试 3 次，分别延迟 2 秒、10 秒和 30 秒。超过上限或消息格式非法时，会进入 RabbitMQ 管理台中的 `document.parse.dlq`、`document.vectorize.dlq` 或 `document.vector.delete.dlq`，不会无限重入队。可通过 `RABBITMQ_MAX_RETRIES` 将重试次数调低至 0—3；生产者和消费者均使用持久化消息及发布确认。
 
 嵌入模型会在第一次向量化时自动下载并缓存，首次处理耗时会明显长于后续任务。Qdrant 控制台位于 `http://127.0.0.1:6333/dashboard`。
 

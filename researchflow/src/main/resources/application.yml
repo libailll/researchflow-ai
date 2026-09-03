@@ -11,6 +11,14 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
 
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    validate-on-migrate: true
+    clean-disabled: true
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -23,6 +31,10 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
   servlet:
     multipart:

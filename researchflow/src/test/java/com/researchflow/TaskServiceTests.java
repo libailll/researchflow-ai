@@ -13,7 +13,10 @@ import com.researchflow.enums.TaskPriority;
 import com.researchflow.enums.TaskStatus;
 import com.researchflow.exception.BusinessException;
 import com.researchflow.mapper.TaskMapper;
+import com.researchflow.mapper.ProjectMemberMapper;
+import com.researchflow.service.NotificationService;
 import com.researchflow.service.ProjectPermissionService;
+import com.researchflow.service.ProjectProgressService;
 import com.researchflow.service.impl.TaskServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +43,15 @@ class TaskServiceTests {
 
     @Mock
     private ProjectPermissionService projectPermissionService;
+
+    @Mock
+    private ProjectProgressService projectProgressService;
+
+    @Mock
+    private NotificationService notificationService;
+
+    @Mock
+    private ProjectMemberMapper projectMemberMapper;
 
     @InjectMocks
     private TaskServiceImpl taskService;
@@ -135,6 +147,7 @@ class TaskServiceTests {
                 task(4L, 3L, TaskStatus.TODO, LocalDate.now().minusDays(3))
         );
         when(taskMapper.selectList(any(Wrapper.class))).thenReturn(tasks);
+        when(projectProgressService.calculate(tasks)).thenReturn(25);
 
         var dashboard = taskService.getDashboard(100L);
 

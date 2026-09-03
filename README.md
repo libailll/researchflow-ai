@@ -12,6 +12,7 @@ ResearchFlow AI 是面向科研团队的协作与知识检索平台，将项目�
 - 基于 Tool Calling 的项目管理 Agent
 - 周报、文档摘要和项目风险报告生成与导出
 - 任务状态变更、逾期提醒等站内通知
+- 基于 Flyway 的数据库版本迁移与已有数据兼容升级
 
 ## 技术栈
 
@@ -37,7 +38,7 @@ Spring Boot Backend
                Qdrant    DeepSeek
 ```
 
-Java 服务负责业务、认证、权限和数据持久化；Python AI 服务负责文档解析、向量化、检索、模型调用和 Agent 推理。RabbitMQ 用于解耦耗时的文档处理任务。
+Java 服务负责业务、认证、权限和数据持久化；Python AI 服务负责文档解析、向量化、检索、模型调用和 Agent 推理。RabbitMQ 用于解耦耗时的文档处理任务；消息持久化并经过 2 秒、10 秒、30 秒三档有限重试，连续失败后进入对应死信队列，避免故障消息无限循环。
 
 ## Docker 一键启动
 
@@ -88,6 +89,7 @@ docker compose down
 researchflow-ai/
 ├─ frontend/       Vue 3 前端
 ├─ researchflow/   Spring Boot 后端
+│  └─ src/main/resources/db/migration/  Flyway 数据库迁移
 ├─ ai-service/     FastAPI AI 服务
 ├─ docs/           项目文档
 ├─ docker-compose.yml
@@ -100,6 +102,10 @@ researchflow-ai/
 - 仓库仅保留 `.env.example` 配置模板。
 - DeepSeek API Key、JWT 密钥及数据库密码不得提交到 Git。
 - 对外部署前需要替换所有示例密码并限制数据库和中间件管理端口。
+
+## 数据库迁移
+
+数据库结构由 Spring Boot 启动时通过 Flyway 自动维护。全新数据库会依次执行全部版本脚本；已有数据库首次接入时会建立基线并执行缺失的幂等迁移。后续表结构变更应新增更高版本的 `V<n>__description.sql`，不要修改已经执行过的迁移，也不需要删除 Docker 数据卷。
 
 ## License
 

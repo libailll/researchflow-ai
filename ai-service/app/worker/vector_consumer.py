@@ -1,7 +1,6 @@
 import json
 import logging
 import threading
-import time
 
 import httpx
 import pika
@@ -11,6 +10,7 @@ from app.core.config import Settings
 from app.models.document import DocumentVectorMessage
 from app.services.java_client import JavaDocumentClient
 from app.services.vector_store import get_vector_store
+from app.worker.message_recovery import dead_letter_invalid, retry_or_dead_letter, will_dead_letter
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,9 @@ class VectorConsumer:
             try:
                 with pika.BlockingConnection(parameters) as connection:
                     channel = connection.channel()
-                    channel.queue_declare(queue=self.settings.document_vectorize_queue, durable=True)
-                    channel.queue_declare(queue=self.settings.document_vector_delete_queue, durable=True)
+                    channel.queue_declare(queue=self.settings.document_vectorize_queue, passive=True)
+                    channel.queue_declare(queue=self.settings.document_vector_delete_queue, passive=True)
+                    channel.confirm_delivery()
                     channel.basic_qos(prefetch_count=1)
                     channel.basic_consume(self.settings.document_vectorize_queue, self._handle_vectorize, auto_ack=False)
                     channel.basic_consume(self.settings.document_vector_delete_queue, self._handle_delete, auto_ack=False)
@@ -68,7 +69,7 @@ class VectorConsumer:
             finally:
                 self.connected = False
 
-    def _handle_vectorize(self, channel, method, _properties, body: bytes) -> None:
+    def _handle_vectorize(self, channel, method, properties, body: bytes) -> None:
         client = JavaDocumentClient(self.settings.java_api_base_url, self.settings.ai_internal_token)
         try:
             message = DocumentVectorMessage.model_validate(json.loads(body))
@@ -80,35 +81,64 @@ class VectorConsumer:
             channel.basic_ack(method.delivery_tag)
             logger.info("Document %s vectorized with %s chunks", message.document_id, len(document.chunks))
         except (json.JSONDecodeError, ValidationError) as exc:
-            logger.error("Discarding invalid vector message: %s", exc)
-            channel.basic_ack(method.delivery_tag)
+            logger.error("Dead-lettering invalid vector message: %s", exc)
+            dead_letter_invalid(
+                channel, method, properties, body,
+                queue_name=self.settings.document_vectorize_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )
         except (httpx.HTTPError, ConnectionError) as exc:
-            logger.warning("Java service unavailable; requeueing vector message: %s", exc)
-            channel.basic_nack(method.delivery_tag, requeue=True)
-            time.sleep(2)
+            self._report_final_vector_failure(client, locals().get("message"), properties, exc)
+            retry_or_dead_letter(
+                channel, method, properties, body,
+                queue_name=self.settings.document_vectorize_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )
         except Exception as exc:
             logger.exception("Document vectorization failed")
-            try:
-                if "message" in locals():
-                    client.mark_vector_failed(message.document_id, str(exc) or exc.__class__.__name__)
-                channel.basic_ack(method.delivery_tag)
-            except Exception as callback_error:
-                logger.error("Could not report vector failure; requeueing: %s", callback_error)
-                channel.basic_nack(method.delivery_tag, requeue=True)
-                time.sleep(2)
+            self._report_final_vector_failure(client, locals().get("message"), properties, exc)
+            retry_or_dead_letter(
+                channel, method, properties, body,
+                queue_name=self.settings.document_vectorize_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )
         finally:
             client.close()
 
-    def _handle_delete(self, channel, method, _properties, body: bytes) -> None:
+    def _report_final_vector_failure(self, client, message, properties, error: Exception) -> None:
+        if message is None or not will_dead_letter(properties, self.settings):
+            return
+        try:
+            client.mark_vector_failed(message.document_id, str(error) or error.__class__.__name__)
+        except Exception as callback_error:
+            logger.error("Could not update final vector failure status: %s", callback_error)
+
+    def _handle_delete(self, channel, method, properties, body: bytes) -> None:
         try:
             message = DocumentVectorMessage.model_validate(json.loads(body))
             get_vector_store(self.settings).delete_document(message.document_id)
             channel.basic_ack(method.delivery_tag)
             logger.info("Deleted vectors for document %s", message.document_id)
         except (json.JSONDecodeError, ValidationError) as exc:
-            logger.error("Discarding invalid vector delete message: %s", exc)
-            channel.basic_ack(method.delivery_tag)
+            logger.error("Dead-lettering invalid vector delete message: %s", exc)
+            dead_letter_invalid(
+                channel, method, properties, body,
+                queue_name=self.settings.document_vector_delete_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )
         except Exception as exc:
-            logger.warning("Vector deletion failed; requeueing message: %s", exc)
-            channel.basic_nack(method.delivery_tag, requeue=True)
-            time.sleep(2)
+            retry_or_dead_letter(
+                channel, method, properties, body,
+                queue_name=self.settings.document_vector_delete_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )

@@ -1,7 +1,6 @@
 import json
 import logging
 import threading
-import time
 
 import httpx
 import pika
@@ -11,6 +10,7 @@ from app.core.config import Settings
 from app.models.document import DocumentParseMessage
 from app.services.document_parser import DocumentParser
 from app.services.java_client import JavaDocumentClient
+from app.worker.message_recovery import dead_letter_invalid, retry_or_dead_letter, will_dead_letter
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +47,12 @@ class DocumentConsumer:
             try:
                 with pika.BlockingConnection(parameters) as connection:
                     channel = connection.channel()
-                    channel.queue_declare(queue=self.settings.document_parse_queue, durable=True)
+                    channel.queue_declare(queue=self.settings.document_parse_queue, passive=True)
+                    channel.confirm_delivery()
                     channel.basic_qos(prefetch_count=1)
                     self.connected = True
                     logger.info("Listening for document messages on queue %s", self.settings.document_parse_queue)
-                    for method, _properties, body in channel.consume(
+                    for method, properties, body in channel.consume(
                         self.settings.document_parse_queue,
                         inactivity_timeout=1,
                         auto_ack=False,
@@ -60,7 +61,7 @@ class DocumentConsumer:
                             break
                         if method is None:
                             continue
-                        self._handle(channel, method.delivery_tag, body)
+                        self._handle(channel, method, properties, body)
                     channel.cancel()
             except (pika.exceptions.AMQPError, OSError) as exc:
                 self.connected = False
@@ -70,7 +71,7 @@ class DocumentConsumer:
             finally:
                 self.connected = False
 
-    def _handle(self, channel: pika.adapters.blocking_connection.BlockingChannel, delivery_tag: int, body: bytes) -> None:
+    def _handle(self, channel, method, properties, body: bytes) -> None:
         client = JavaDocumentClient(self.settings.java_api_base_url, self.settings.ai_internal_token)
         try:
             message = DocumentParseMessage.model_validate(json.loads(body))
@@ -79,24 +80,43 @@ class DocumentConsumer:
             parser = DocumentParser(self.settings.chunk_size, self.settings.chunk_overlap)
             chunks = parser.parse_and_chunk(message.file_path)
             client.save_parsed(message.document_id, chunks)
-            channel.basic_ack(delivery_tag)
+            channel.basic_ack(method.delivery_tag)
             logger.info("Document %s parsed into %s chunks", message.document_id, len(chunks))
         except (json.JSONDecodeError, ValidationError) as exc:
-            logger.error("Discarding invalid document message: %s", exc)
-            channel.basic_ack(delivery_tag)
+            logger.error("Dead-lettering invalid document message: %s", exc)
+            dead_letter_invalid(
+                channel, method, properties, body,
+                queue_name=self.settings.document_parse_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )
         except (httpx.HTTPError, ConnectionError) as exc:
-            logger.warning("Java service unavailable; requeueing message: %s", exc)
-            channel.basic_nack(delivery_tag, requeue=True)
-            time.sleep(2)
+            self._report_final_failure(client, locals().get("message"), properties, exc)
+            retry_or_dead_letter(
+                channel, method, properties, body,
+                queue_name=self.settings.document_parse_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )
         except Exception as exc:
             logger.exception("Document parsing failed")
-            try:
-                if 'message' in locals():
-                    client.mark_failed(message.document_id, str(exc) or exc.__class__.__name__)
-                channel.basic_ack(delivery_tag)
-            except Exception as callback_error:
-                logger.error("Could not report parsing failure; requeueing: %s", callback_error)
-                channel.basic_nack(delivery_tag, requeue=True)
-                time.sleep(2)
+            self._report_final_failure(client, locals().get("message"), properties, exc)
+            retry_or_dead_letter(
+                channel, method, properties, body,
+                queue_name=self.settings.document_parse_queue,
+                settings=self.settings,
+                error=exc,
+                logger=logger,
+            )
         finally:
             client.close()
+
+    def _report_final_failure(self, client, message, properties, error: Exception) -> None:
+        if message is None or not will_dead_letter(properties, self.settings):
+            return
+        try:
+            client.mark_failed(message.document_id, str(error) or error.__class__.__name__)
+        except Exception as callback_error:
+            logger.error("Could not update final parsing failure status: %s", callback_error)

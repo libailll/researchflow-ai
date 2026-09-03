@@ -15,7 +15,6 @@ services:
       - "${MYSQL_PORT:-3307}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./researchflow/sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
@@ -135,6 +134,7 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-researchflow}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-researchflow-rabbit-change-me}
       RABBITMQ_VHOST: /
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
       QDRANT_URL: http://qdrant:6333
       EMBEDDING_CACHE_DIR: /data/models
       TZ: Asia/Shanghai

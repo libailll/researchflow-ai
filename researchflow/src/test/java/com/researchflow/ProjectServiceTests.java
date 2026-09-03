@@ -15,6 +15,7 @@ import com.researchflow.mapper.ProjectMapper;
 import com.researchflow.mapper.ProjectMemberMapper;
 import com.researchflow.mapper.UserMapper;
 import com.researchflow.service.ProjectPermissionService;
+import com.researchflow.service.ProjectProgressService;
 import com.researchflow.service.impl.ProjectServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,9 @@ class ProjectServiceTests {
 
     @Mock
     private ProjectPermissionService projectPermissionService;
+
+    @Mock
+    private ProjectProgressService projectProgressService;
 
     @InjectMocks
     private ProjectServiceImpl projectService;
@@ -110,9 +114,9 @@ class ProjectServiceTests {
         dto.setName("更新后的项目");
         dto.setDescription("更新描述");
         dto.setStatus(ProjectStatus.RUNNING);
-        dto.setProgress(30);
         dto.setStartDate(LocalDate.of(2026, 8, 16));
         dto.setEndDate(LocalDate.of(2026, 12, 31));
+        when(projectProgressService.getProgress(100L)).thenReturn(30);
 
         var result = projectService.updateProject(100L, dto);
 

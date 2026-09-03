@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     rabbitmq_username: str = "guest"
     rabbitmq_password: str = "guest"
     rabbitmq_vhost: str = "/"
+    rabbitmq_retry_exchange: str = "researchflow.document.retry"
+    rabbitmq_dead_letter_exchange: str = "researchflow.document.dlx"
+    rabbitmq_max_retries: int = Field(default=3, ge=0, le=3)
     document_parse_queue: str = "document.parse"
     document_vectorize_queue: str = "document.vectorize"
     document_vector_delete_queue: str = "document.vector.delete"

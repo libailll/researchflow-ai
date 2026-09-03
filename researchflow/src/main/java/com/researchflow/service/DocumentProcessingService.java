@@ -35,6 +35,10 @@ public class DocumentProcessingService {
     @Transactional
     public void markProcessing(Long documentId) {
         Document document = requireDocument(documentId);
+        if (document.getParseStatus() == DocumentStatus.SUCCESS) {
+            log.info("Ignoring duplicate parse start for completed document: documentId={}", documentId);
+            return;
+        }
         document.setParseStatus(DocumentStatus.PROCESSING);
         document.setParseError(null);
         document.setUpdatedAt(LocalDateTime.now());
@@ -45,6 +49,10 @@ public class DocumentProcessingService {
     @Transactional
     public void saveParsed(Long documentId, List<DocumentChunkDTO> chunks) {
         Document document = requireDocument(documentId);
+        if (document.getParseStatus() == DocumentStatus.SUCCESS) {
+            log.info("Ignoring duplicate parse result for completed document: documentId={}", documentId);
+            return;
+        }
         if (chunks == null || chunks.isEmpty()) {
             throw new BusinessException(ErrorCode.DOCUMENT_PARSE_RESULT_INVALID);
         }
@@ -104,6 +112,10 @@ public class DocumentProcessingService {
     @Transactional
     public void markVectorProcessing(Long documentId) {
         Document document = requireDocument(documentId);
+        if (document.getVectorStatus() == DocumentStatus.SUCCESS) {
+            log.info("Ignoring duplicate vector start for completed document: documentId={}", documentId);
+            return;
+        }
         document.setVectorStatus(DocumentStatus.PROCESSING);
         document.setVectorError(null);
         document.setUpdatedAt(LocalDateTime.now());
@@ -125,6 +137,10 @@ public class DocumentProcessingService {
     @Transactional
     public void markVectorFailed(Long documentId, String error) {
         Document document = requireDocument(documentId);
+        if (document.getVectorStatus() == DocumentStatus.SUCCESS) {
+            log.info("Ignoring stale vector failure for completed document: documentId={}", documentId);
+            return;
+        }
         document.setVectorStatus(DocumentStatus.FAILED);
         document.setVectorError(error);
         document.setUpdatedAt(LocalDateTime.now());
@@ -151,6 +167,10 @@ public class DocumentProcessingService {
     @Transactional
     public void markFailed(Long documentId, String error) {
         Document document = requireDocument(documentId);
+        if (document.getParseStatus() == DocumentStatus.SUCCESS) {
+            log.info("Ignoring stale parse failure for completed document: documentId={}", documentId);
+            return;
+        }
         document.setParseStatus(DocumentStatus.FAILED);
         document.setParseError(error);
         document.setUpdatedAt(LocalDateTime.now());
